@@ -4,7 +4,7 @@
 
 ## Demo
 
-TODO
+![demonstration screencast](./assets/demo-01.gif)
 
 ## Install
 
