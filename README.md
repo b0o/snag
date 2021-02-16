@@ -1,6 +1,6 @@
 # snag [![version](https://img.shields.io/github/v/tag/b0o/snag?style=flat&color=yellow&label=version&sort=semver)](https://github.com/b0o/snag/releases) [![license: gpl-3.0-or-later](https://img.shields.io/github/license/b0o/snag?style=flat&color=green)](https://opensource.org/licenses/GPL-3.0)
 
-> snag screenshots and screencasts in Wayland
+> snag screenshots and screencasts in sway
 
 ## Demo
 
