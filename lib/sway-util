@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+shopt -s inherit_errexit
+
+# setup {{{
+[[ ! -v _SWAY_UTIL ]] || return
+[[ "${BASH_SOURCE[0]}" != "$0" ]] || {
+  echo "$0: this script should be sourced, not be called directly" >&2
+  exit 1
+}
+declare -x _SWAY_UTIL
+
+function command_exists() {
+  command -v "$1" &> /dev/null
+}
+
+declare -x LIBDIR
+LIBDIR="${LIBDIR:-$(realpath -e "$(dirname "${BASH_SOURCE[0]}")")}"
+# }}}
+
+# jq {{{
+# TODO: move to separate file
+
+function jq_join() {
+  sep=""
+  if [[ -n "$1" && -n "$2" && ! ($2 =~ ^\s*[|\;] || $1 =~ [|\;]\s*$) ]]; then
+    sep=" | "
+  fi
+  echo "${1}${sep}${2}"
+}
+
+function jq() {
+  local -a args=("$@")
+  local -a opts=()
+  local filter=""
+  case $# in
+  0)
+    echo "jq: expected argument" >&2
+    return 1
+    ;;
+  1)
+    filter="$1"
+    ;;
+  2)
+    filter="$(jq_join "$2" "$1")"
+    ;;
+  *)
+    opts=("${args[@]:0:$(($# - 2))}")
+    filter="$(jq_join "${args[-1]}" "${args[-2]}")"
+    ;;
+  esac
+  env jq -L "$LIBDIR" "${opts[@]}" "import \"util\" as u; import \"sway-ipc\" as s; ${filter}"
+}
+
+# }}}
+
+# workspaces {{{
+
+function workspaces_get_focused() {
+  swaymsg -t get_workspaces | jq "${@:-}" "s::workspaces_get_focused"
+}
+
+function workspaces_get_visible() {
+  swaymsg -t get_workspaces | jq "${@:-}" "s::workspaces_get_visible"
+}
+
+function workspaces_by_id() {
+  [[ $# -ge 1 ]] || {
+    echo "expected argument(s): id" >&2
+    return 1
+  }
+  local id="$1"
+  shift
+  swaymsg -t get_workspaces | jq --arg 'id' "$id" "${@:-}" 's::workspaces_by_id($id | tonumber)'
+}
+
+function workspaces_by_name() {
+  [[ $# -ge 1 ]] || {
+    echo "expected argument(s): name" >&2
+    return 1
+  }
+  local name="$1"
+  shift
+  swaymsg -t get_workspaces | jq --arg 'name' "$name" "${@:-}" 's::workspaces_by_name($name)'
+}
+
+function parse_workspace_name() {
+  jq "${@:-}" "s::parse_workspace_name"
+}
+
+# }}}
+# tree {{{
+
+function tree_get_visible() {
+  swaymsg -t get_tree | jq -r "${@:-}" "s::tree_get_visible"
+}
+
+function tree_get_focused() {
+  swaymsg -t get_tree | jq -r "${@:-}" "s::tree_get_focused"
+}
+
+function tree_by_id() {
+  [[ $# -ge 1 ]] || {
+    echo "expected argument(s): id" >&2
+    return 1
+  }
+  local id="$1"
+  shift
+  swaymsg -t get_tree | jq --arg 'id' "$id" "${@:-}" 's::tree_by_id($id | tonumber)'
+}
+
+# }}}
+# containers {{{
+
+function containers_get_visible() {
+  swaymsg -t get_tree | jq -r "${@:-}" "s::containers_get_visible"
+}
+
+function containers_get_focused() {
+  swaymsg -t get_tree | jq -r "${@:-}" "s::containers_get_focused"
+}
+
+function containers_by_id() {
+  [[ $# -ge 1 ]] || {
+    echo "expected argument(s): id" >&2
+    return 1
+  }
+  local id="$1"
+  shift
+  swaymsg -t get_tree | jq --arg 'id' "$id" "${@:-}" 's::containers_by_id($id | tonumber)'
+}
+
+# }}}
+# outputs {{{
+
+function outputs_get_active() {
+  swaymsg -t get_outputs | jq "${@:-}" "s::outputs_get_active"
+}
+
+function outputs_get_focused() {
+  swaymsg -t get_outputs | jq "${@:-}" "s::outputs_get_focused"
+}
+
+function outputs_by_id() {
+  [[ $# -ge 1 ]] || {
+    echo "expected argument(s): id" >&2
+    return 1
+  }
+  local id="$1"
+  shift
+  swaymsg -t get_outputs | jq --arg 'id' "$id" "${@:-}" 's::outputs_by_id($id | tonumber)'
+}
+
+function outputs_by_name() {
+  [[ $# -ge 1 ]] || {
+    echo "expected argument(s): name" >&2
+    return 1
+  }
+  local name="$1"
+  shift
+  swaymsg -t get_outputs | jq --arg 'name' "$name" "${@:-}" 's::outputs_by_name($name)'
+}
+
+# }}}
+# utility {{{
+
+function fmt_rect() {
+  jq "${@:-}" "s::fmt_rect"
+}
+
+function json_shell_fmt() {
+  jq -r "${@:-}" "u::raw_shell_fmt"
+}
+
+function json_explode() {
+  jq -r "${@:-}" "u::explode"
+}
+
+# }}}

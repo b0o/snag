@@ -1,0 +1,1061 @@
+#!/usr/bin/env bash
+
+# Utility for swaywm which unifies the task of capturing images and videos of
+# your screen.
+#
+# Copyright (C) 2020-2021 Maddison Hellstrom <https://github.com/b0o>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+# TODO: configuration file
+# TODO: ability for user to change default cachedir/runtimedir w/ env vars
+# TODO: screenshot history
+# TODO: edit screenshot w/ swappy
+
+set -Eeuo pipefail
+shopt -s inherit_errexit
+
+declare prog="snag"
+declare version="v0.0.1"
+declare authors=("Maddison Hellstrom <github.com/b0o>")
+declare repository="github.com/b0o/snag"
+declare license="GPL-3.0-or-later"
+declare license_url="https://www.gnu.org/licenses/gpl-3.0.txt"
+
+declare -a require=(
+  "sway-util" # shellcheck source ../lib/sway-util
+)
+
+# setup {{{
+declare -g basedir libdir runtimedir cachedir
+basedir="$(realpath -e "$(dirname "$0")")"
+libdir="${LIBDIR:-$(realpath -e "${basedir}/lib/")}"
+runtimedir="${XDG_RUNTIME_DIR:-/tmp}/snag"
+cachedir="${HOME}/.cache/snag"
+
+declare -g pidfile="$runtimedir/pid"
+# }}}
+
+# globals {{{
+declare -i copy=0
+declare upload=""
+declare -i notify=0
+declare -i rofi=0
+declare mode_capture="image"
+declare out=""
+declare out_desc=""
+declare out_dir="$PWD"
+declare -i out_name_manual=0
+declare out_name=""
+declare out_namef=""
+declare format=""
+declare selection=""
+declare region=""
+declare -a rest=()
+declare -a cmd=()
+declare -a upload_cmd=()
+declare -i passthru=0
+declare -a args=()
+declare -a passthru_args=()
+declare out_url=""
+# }}}
+
+function usage() {
+  mapfile -t usage << EOF
+$prog $version ($repository)
+
+Usage: $prog [opts] [-- [pass-thru opts ..]]
+
+Options:
+  General:
+  -h           --help   Display usage information for $prog.
+  -v        --version   Output version.
+
+  -x      --copy-path   Copy the output file path to the clipboard using
+                        wl-copy.
+
+  -N         --notify   Send a notification with the snag result on exit.
+
+  -U <service> --upload Upload the output file.
+                        [service] may be one of: drop, imgur (image only)
+
+  -R           --rofi   Use rofi to present an interactive snag UI.
+
+  Capture Mode:
+  -I [format] --image   Capture a still image using grim.
+                        This is the default mode.
+                        [format] may be one of: png (default), jpeg, ppm.
+
+  -V [format] --video   Capture a video using wf-recorder.
+                         [format] may be one of: mp4 (default), gif, webm.
+
+  Capture Region:
+
+  If none of the following options are specified, the focused output will be
+  captured by default.
+
+  -r [region] --region  Capture a rectangular region.
+                        [region] is of the form "<x>,<y> <width>x<height>"
+                        If [region] is not specified, the user will be able to
+                        select it graphically with the mouse via the slurp
+                        utility.
+
+  -c [id]   --container Capture a container.
+                        [id] is a sway container ID.
+                        If [id] is not specified, the user will be able to
+                        select the target container graphically with the mouse.
+                        If [id] is a the string 'foc' or 'focused', the
+                        focused container will be used.
+
+  -w [name] --workspace Capture a workspace.
+                        [name] is a sway workspace name.
+                        If [name] is not specified, the user will be able to
+                        select the target workspace graphically with the mouse.
+                        If [name] is a the string 'foc' or 'focused', the
+                        focused workspace will be used.
+
+  -o [output] --output  Capture an output.
+                        [op] is a wayland output name.
+                        If output is not specified, the user will be able to
+                        select the target output graphically with the mouse.
+                        If [foc] is a the string 'foc' or 'focused', the
+                        focused output will be used.
+
+  -a            --all   Capture all outputs.
+
+  Output File:
+
+  -d <dir> --dir        Save the screenshot in [dir].
+                        Default: current working directory.
+
+  -n <name>    --name   Use [name] as the literal output file name.
+                        The default file name will be generated by the -f
+                        format of "%Y-%m-%d_%H-%M-%S_{desc}.{ext}"
+
+  -f <format> --namef   Use [format] to construct the output filename.
+
+                        Sequences recognised by date(1) or the following will
+                        be interpreted:
+
+                        {ext}     the file extension as set in the -I / -V opts
+                                  (without a leading .).
+
+                        {desc}    a description of what was selected:
+                                    - if a region was selected: "region"
+                                    - if a window was selected:
+                                      - wayland apps: window's app_id
+                                      - xwayland apps: window's class property
+                                    - if an output was selected: its name
+                                    - if all outputs were selected: "all"
+
+                        {region}  the captured region's coordinates, of the
+                                  form "<x>,<y>_<width>x<height>".
+
+To pass on arguments to the capture command (grim or wf-recorder), a -- can be
+placed at the end of arguments meant for snag, and any remaining arguments will
+be passed through to the capture command.
+
+(c) 2020-$(date +%Y) ${authors[*]}
+
+License: $license ($license_url)
+EOF
+  printf '%s\n' "${usage[@]}"
+}
+
+function kill_recursive() {
+  local -i pid=-1
+  while read -r pid; do
+    ps --ppid="$pid" -o pid= | kill_recursive "$@" || true
+    kill "${1:--INT}" "$pid"
+  done
+}
+
+function init() {
+  [[ -d "$runtimedir" ]] || mkdir -p "$runtimedir"
+  [[ -d "$cachedir" ]] || mkdir -p "$cachedir"
+
+  local -i pid=-1
+  if [[ -e "$pidfile" ]]; then
+    if [[ -s "$pidfile" ]]; then
+
+      pid="$(head -1 "$pidfile")"
+
+      if [[ $pid -gt 1 ]] && ps "$pid" &> /dev/null; then
+        # TODO: sanity check to ensure that $pid is actually a snag instance
+        kill_recursive <<< "$pid"
+        exit 0
+      fi
+    fi
+    rm "$pidfile"
+  fi
+  echo "$$" > "$pidfile"
+}
+
+function cleanup() {
+  local -i code=$?
+  [[ -e "$pidfile" ]] && rm "$pidfile"
+
+  [[ -e "$out" ]] || {
+    echo "$prog: error: capture failed: output file not created" >&2
+    return 1
+  }
+
+  upload
+
+  echo "${out_url:-$out}"
+
+  local copy_msg=""
+  [[ $copy -eq 0 ]] || {
+    copy_msg="Copied "
+    wl-copy "${out_url:-$out}"
+  }
+  [[ $notify -eq 0 ]] || notify-send -t 5000 -i "$out" "snag" "${copy_msg}${out_url:-$out}"
+
+  exit $code
+}
+
+function handle() {
+  local sig="${1:-}"
+  echo "caught $sig" >&2
+  exit
+}
+
+function _rofi() {
+  local -a rofi_opts=()
+
+  if [[ "${SNAG_WRAP_ROFI:-1}" -eq 1 ]]; then
+    if [[ -v ROFI_DMENU_PROMPT && -n "$ROFI_DMENU_PROMPT" ]]; then
+      rofi_opts+=(-p "$ROFI_DMENU_PROMPT")
+    fi
+
+    if [[ ! $* =~ -m(onitor)?[[:space:]] ]]; then
+      mapfile -t xw_outputs <<< "$(xrandr | awk '/^.* connected/{ print $1 }')"
+      wl_output_idx="$(swaymsg -t get_outputs | jq 'to_entries | map(select(.value.focused == true))[0].key')"
+      rofi_opts+=(-m "${xw_outputs[$wl_output_idx]}")
+    fi
+  fi
+
+  rofi "${rofi_opts[@]}" "$@"
+}
+
+function is_valid_region() {
+  [[ $# -eq 1 && \
+  "$1" =~ ^[[:digit:]]{1,},[[:digit:]]{1,}[[:space:]][[:digit:]]{1,}x[[:digit:]]{1,}$ ]]
+}
+
+function fmt_name() {
+  local fmt="$1"
+  local ext="$2"
+  local desc="$3"
+  local region="$4"
+  mapfile -t replace << "EOF"
+    {
+      gsub(/\{ext\}/, ext, $0)
+      gsub(/\{desc\}/, desc, $0)
+      gsub(/\{region\}/, region, $0)
+      print $0
+    }
+EOF
+  date "+$(
+    awk \
+      -v "ext=$ext" \
+      -v "desc=$desc" \
+      -v "region=$region" \
+      "$(printf '%s\n' "${replace[@]}")" \
+      <<< "$fmt"
+  )"
+}
+
+function slurp_multi() {
+  local -a geoms=()
+  mapfile -t geoms <<< "$(sed -e '/^$/d')"
+  if [[ ${#geoms[@]} -gt 1 ]]; then
+    slurp <<< "$(printf '%s\n' "${geoms[@]}")"
+  else
+    [[ -n "${geoms[0]:-}" ]] || return 1
+    echo "${geoms[0]:-}"
+  fi
+}
+
+function select_node() {
+  local -a node_ids=()
+  local -a node_rects=()
+  while read -r l; do
+    if [[ ${#node_ids[@]} -eq ${#node_rects[@]} ]]; then
+      node_ids+=("$l")
+    else
+      node_rects+=("$l")
+    fi
+  done <<< "$(jq -r "" 'if type != "array" then [ . ] else . end | .[] | .id, s::fmt_rect')"
+  ! [[ ${#node_ids[@]} -eq 0 || ${#node_rects[@]} -eq 0 || ${#node_ids[@]} -ne ${#node_rects[@]} ]] || return 1
+
+  local sel_rect
+  sel_rect="$(slurp_multi <<< "$(printf '%s\n' "${node_rects[@]}")")"
+
+  local desc="region"
+  for i in $(seq 0 $((${#node_ids[@]} - 1))); do
+    [[ ${node_rects[$i]} == "$sel_rect" ]] || continue
+    desc="$(
+      tree_by_id "${node_ids[$i]}" -r \
+        'if .type == "root" then
+          "all"
+         elif .type == "output" or .type == "workspace" then
+          .name
+         elif .type == "con" or .type == "floating_con" then
+           .app_id // .window_properties.class
+         else
+           null
+         end // "region"'
+    )"
+  done
+
+  printf '%s\n%s\n' "$sel_rect" "$desc"
+}
+
+function capture() {
+  echo "capture: ${cmd[*]}" >&2
+  "${cmd[@]}" >&2 || {
+    echo "$prog: error: capture failed" >&2
+    return 1
+  }
+  echo "capture done" >&2
+}
+
+function upload() {
+  if [[ ${#upload_cmd[@]} -gt 0 ]]; then
+    out_url="$("${upload_cmd[@]}")"
+  fi
+}
+
+function menu_opt_capture() {
+  local -i rofi_result=0
+  local -i n=-1
+
+  if [[ -z "$mode_capture" || "$mode_capture" == "image" ]]; then
+    case "$format" in
+    "" | png) n=0 ;;
+    ppm) n=1 ;;
+    jpeg) n=2 ;;
+    esac
+  elif [[ "$mode_capture" == "video" ]]; then
+    case "$format" in
+    "" | mp4) n=3 ;;
+    webm) n=4 ;;
+    webp) n=5 ;;
+    esac
+  fi
+
+  rofi_result=$(
+    {
+      cat << EOF
+image / png
+image / ppm
+image / jpeg
+video / mp4
+video / webm
+video / webp
+EOF
+    } \
+      | awk -v "n=$n" \
+        '{
+            o = "→ ";
+            if (FNR - 1 == n) {
+              o = o "<span weight=\"heavy\">[" $0 "]</span>"
+            } else {
+              o = o $0
+            }
+            print o
+         }' \
+      | _rofi -dmenu -markup-rows -format i -i \
+        -async-pre-read 0 \
+        -selected-row $n \
+        -p "Capture Mode"
+  ) || return 1
+
+  case $rofi_result in
+  0) mode_capture="image" format="png" ;;
+  1) mode_capture="image" format="ppm" ;;
+  2) mode_capture="image" format="jpeg" ;;
+  3) mode_capture="video" format="mp4" ;;
+  4) mode_capture="video" format="webm" ;;
+  5) mode_capture="video" format="webp" ;;
+  esac
+}
+
+function menu_opt_notify() {
+  local -i rofi_result=0
+
+  rofi_result=$(
+    {
+      cat << eof
+0
+1
+eof
+    } \
+      | awk -v "n=$notify" \
+        '{
+            o = "→ ";
+            if (FNR - 1 == n) {
+              o = o "<span weight=\"heavy\">[" $0 "]</span>"
+            } else {
+              o = o $0
+            }
+            print o
+         }' \
+      | _rofi -dmenu -markup-rows -format i -i \
+        -async-pre-read 0 \
+        -selected-row $notify \
+        -p "Notify"
+  ) || return 1
+
+  case $rofi_result in
+  0) notify=0 ;;
+  1) notify=1 ;;
+  esac
+}
+
+function menu_opt_upload() {
+  local -i rofi_result=0
+  local -i n=-1
+
+  case "$upload" in
+  imgur) n=0 ;;
+  drop) n=1 ;;
+  "") n=2 ;;
+  esac
+
+  rofi_result=$(
+    {
+      cat << EOF
+imgur
+drop
+-
+EOF
+    } \
+      | awk -v "n=$n" \
+        '{
+            o = "→ ";
+            if (FNR - 1 == n) {
+              o = o "<span weight=\"heavy\">[" $0 "]</span>"
+            } else {
+              o = o $0
+            }
+            print o
+         }' \
+      | _rofi -dmenu -markup-rows -format i -i \
+        -async-pre-read 0 \
+        -selected-row $n \
+        -p "Upload"
+  ) || return 1
+
+  case $rofi_result in
+  0) upload="imgur" ;;
+  1) upload="drop" ;;
+  2) upload="" ;;
+  esac
+}
+
+function menu_opt_copy() {
+  local -i rofi_result=0
+
+  rofi_result=$(
+    {
+      cat << EOF
+0
+1
+EOF
+    } \
+      | awk -v "n=$copy" \
+        '{
+            o = "→ ";
+            if (FNR - 1 == n) {
+              o = o "<span weight=\"heavy\">[" $0 "]</span>"
+            } else {
+              o = o $0
+            }
+            print o
+         }' \
+      | _rofi -dmenu -markup-rows -format i -i \
+        -async-pre-read 0 \
+        -selected-row $copy \
+        -p "Copy"
+  ) || return 1
+
+  case $rofi_result in
+  0) copy=0 ;;
+  1) copy=1 ;;
+  esac
+}
+
+function menu_opt_out_dir() {
+  local rofi_result
+  while true; do
+    rofi_result="$(
+      cat \
+        <(echo -e "→ [Accept]\n→ [Custom]\n..\0icon\x1ffolder") \
+        <(find "$out_dir" -mindepth 1 -maxdepth 1 -type d | awk '{ print $0 "\0icon\x1ffolder" }') \
+        | _rofi -dmenu -markup-rows -i \
+          -async-pre-read 0 \
+          -mesg "<b>${out_dir:-}</b>" \
+          -p "Output Dir"
+    )" || return 1
+
+    case "$rofi_result" in
+    "→ [Accept]")
+      return
+      ;;
+    "→ [Custom]")
+      rofi_result="$(
+        _rofi -dmenu -markup-rows \
+          -format f \
+          -async-pre-read 0 \
+          -mesg "${out_dir:-}" \
+          -p "Output Dir [Custom]"
+      )" || continue
+      out_dir="$rofi_result"
+      ;;
+    "..")
+      out_dir="$(realpath "$out_dir/..")"
+      ;;
+    *)
+      out_dir="$rofi_result"
+      ;;
+    esac
+  done
+}
+
+function menu_opt_out_name() {
+  local -i rofi_exit=0
+  local rofi_result
+  while true; do
+    rofi_result="$(
+      _rofi -dmenu -markup-rows \
+        -format f \
+        -async-pre-read 0 \
+        -filter "${out_name:-}" \
+        -kb-custom-1 "Ctrl+c" \
+        -mesg "<span size='small' alpha='70%'>&lt;C-c&gt; or empty string: use format <i>$out_namef</i></span>" \
+        -p "Output Filename"
+    )" || rofi_exit=$?
+
+    case $rofi_exit in
+    0) ;;
+    10) rofi_result="" ;;
+    *) return $? ;;
+    esac
+
+    if [[ "$rofi_result" =~ / ]]; then
+      _rofi -e "Error: invalid filename"
+      continue
+    fi
+    break
+  done
+
+  if [[ -z "$rofi_result" ]]; then
+    out_name_manual=0
+  else
+    out_name_manual=1
+  fi
+
+  out_name="$rofi_result"
+}
+
+function menu_opt_region() {
+  local -i rofi_result=0
+  if [[ $# -gt 0 ]]; then
+    rofi_result=$1
+  else
+    rofi_result=$(
+      {
+        cat << EOF
+→ &lt;Select Region&gt;
+→ &lt;Select Container&gt;
+→ &lt;Select Workspace&gt;
+→ &lt;Select Output&gt;
+→ &lt;Select All&gt;
+→ [Custom]
+EOF
+      } \
+        | _rofi -dmenu -markup-rows -format i -i \
+          -async-pre-read 0 \
+          -selected-row 0 \
+          -p "Region"
+    ) || return 1
+  fi
+
+  case $rofi_result in
+  0)
+    selection="$(printf '%s\n%s\n' "$(slurp)" "region")"
+    ;;
+  1)
+    selection="$(containers_get_visible | select_node)"
+    ;;
+  2)
+    selection="$(workspaces_get_visible | select_node)"
+    ;;
+  3)
+    selection="$(outputs_get_active | select_node)"
+    ;;
+  4)
+    selection="$(tree_by_id 1 | select_node)"
+    ;;
+  5)
+    while true; do
+      local rofi_selection
+      rofi_selection="$(
+        _rofi -dmenu \
+          -format f \
+          -async-pre-read 0 \
+          -mesg "&lt;x&gt;,&lt;y&gt; &lt;w&gt;x&lt;h&gt;" \
+          -filter "${region:-}" \
+          -p "Region [Custom]"
+      )" || break
+      [[ -n "$rofi_selection" ]] || break
+      is_valid_region "$rofi_selection" || {
+        _rofi -e "Invalid region: $rofi_selection"
+        continue
+      }
+      selection="$(printf '%s\n%s\n' "$rofi_selection" "region")"
+      break
+    done
+    ;;
+  esac
+}
+
+function menu_main() {
+  local -i rofi_exit=0
+  local -i rofi_result=0
+  local -i rofi_prev=1
+  local -i menu_finished=0
+  while [[ $menu_finished -eq 0 ]]; do
+    # rofi_result=1
+    rofi_exit=0
+    rofi_result=$(
+      {
+        cat << EOF
+<span weight='heavy'>Options</span>
+Capture Mode:     <span style='italic'>${mode_capture:--}${mode_capture:+${format:+ / $format}}</span>
+Region:           <span style='italic'>${region:--}</span>
+Notify:           <span style='italic'>${notify:-0}</span>
+Upload:           <span style='italic'>${upload:--}</span>
+Copy:             <span style='italic'>${copy:-0}</span>
+Output Dir:       <span style='italic'>${out_dir:--}</span>
+Output Filename:  <span style='italic'>${out_name:--}</span>
+
+→ Capture Region    <span size='small' alpha='70%'>&lt;C-r&gt;</span>
+→ Capture Container <span size='small' alpha='70%'>&lt;C-c&gt;</span>
+→ Capture Workspace <span size='small' alpha='70%'>&lt;C-w&gt;</span>
+→ Capture Output    <span size='small' alpha='70%'>&lt;C-o&gt;</span>
+→ Capture All       <span size='small' alpha='70%'>&lt;C-a&gt;</span>
+
+<span weight='heavy'>→ Capture</span>       <span size='small' alpha='70%'>&lt;C-Return&gt;</span>
+EOF
+      } \
+        | _rofi -dmenu -markup-rows -format i -i \
+          -async-pre-read 0 \
+          -selected-row $rofi_prev \
+          -kb-accept-custom "Ctrl+Alt+Return" \
+          -kb-clear-line "Ctrl+Alt+w" \
+          -kb-move-front "Ctrl+Alt+a" \
+          -kb-custom-1 "Ctrl+r" \
+          -kb-custom-2 "Ctrl+c" \
+          -kb-custom-3 "Ctrl+w" \
+          -kb-custom-4 "Ctrl+o" \
+          -kb-custom-5 "Ctrl+a" \
+          -kb-custom-6 "Ctrl+Return" \
+          -kb-custom-7 "Alt+r" \
+          -kb-custom-8 "Alt+c" \
+          -kb-custom-9 "Alt+w" \
+          -kb-custom-10 "Alt+o" \
+          -kb-custom-11 "Alt+a" \
+          -kb-custom-12 "Alt+m" \
+          -kb-custom-13 "Alt+i" \
+          -kb-custom-14 "Alt+v" \
+          -kb-custom-15 "Alt+u" \
+          -kb-custom-16 "Alt+I" \
+          -kb-custom-17 "Alt+D" \
+          -kb-custom-18 "Alt+n" \
+          -kb-custom-19 "Alt+x" \
+          -mesg "<span size='small' alpha='70%'>&lt;M-m&gt; mode toggle / &lt;M-i&gt; image mode / &lt;M-v&gt; video mode / &lt;M-u&gt; upload toggle / &lt;M-S-i&gt; imgur upload / &lt;M-S-d&gt; drop upload / &lt;M-n&gt; notify toggle / &lt;M-x&gt; copy toggle</span>" \
+          -mesg "foo" \
+          -p "snag"
+    ) || rofi_exit=$?
+    rofi_prev=$rofi_result
+
+    case $rofi_exit in
+    0) ;;
+    10) rofi_result=9 menu_finished=1 ;;
+    11) rofi_result=10 menu_finished=1 ;;
+    12) rofi_result=11 menu_finished=1 ;;
+    13) rofi_result=12 menu_finished=1 ;;
+    14) rofi_result=13 menu_finished=1 ;;
+    15) rofi_result=15 menu_finished=1 ;;
+    16) rofi_result=9 ;;
+    17) rofi_result=10 ;;
+    18) rofi_result=11 ;;
+    19) rofi_result=12 ;;
+    20) rofi_result=13 ;;
+
+    21 | 22 | 23 | 24 | 25 | 26 | 27 | 28)
+      rofi_result=0
+      ;;&
+
+    21)
+      rofi_prev=1
+      case "$mode_capture" in
+      image) mode_capture="video" format="mp4" ;;
+      video) mode_capture="image" format="png" ;;
+      esac
+      ;;
+    22) rofi_prev=1 mode_capture="image" format="png" ;;
+    23) rofi_prev=1 mode_capture="video" format="mp4" ;;
+    24)
+      rofi_prev=4
+      case "$upload" in
+      imgur) upload="drop" ;;
+      drop) upload="" ;;
+      *) upload="imgur" ;;
+      esac
+      ;;
+    25) rofi_prev=4 upload="imgur" ;;
+    26) rofi_prev=4 upload="drop" ;;
+    27) rofi_prev=3 notify=$((notify * -1 + 1)) ;;
+    28) rofi_prev=5 copy=$((copy * -1 + 1)) ;;
+
+    *) return $rofi_exit ;;
+    esac
+
+    case $rofi_result in
+    0) ;;
+    1) menu_opt_capture || true ;;
+    2) menu_opt_region || true ;;
+    3) menu_opt_notify || true ;;
+    4) menu_opt_upload || true ;;
+    5) menu_opt_copy || true ;;
+    6) menu_opt_out_dir || true ;;
+    7)
+      menu_opt_out_name || true
+      # if [[ -n "$out_name" ]]; then
+      #   out_namef=""
+      # fi
+      ;;
+    9) menu_opt_region 0 || true ;;
+    10) menu_opt_region 1 || true ;;
+    11) menu_opt_region 2 || true ;;
+    12) menu_opt_region 3 || true ;;
+    13) menu_opt_region 4 || true ;;
+    15) menu_finished=1 ;;
+    *)
+      continue
+      ;;
+    esac
+    parse_opts
+  done
+}
+
+function parse_opts() {
+  [[ -n "$format" ]] || case "$mode_capture" in
+  image) format="png" ;;
+  video) format="mp4" ;;
+  esac
+
+  [[ -n "$selection" ]] || selection="$(outputs_get_focused | select_node)"
+
+  local -a selection_result=()
+  mapfile -t selection_result <<< "$selection"
+
+  [[ ${#selection_result[@]} -eq 2 ]] || {
+    echo "$prog: error: selection failed" >&2
+    return 1
+  }
+
+  region="${selection_result[0]}"
+  out_desc="${selection_result[1]}"
+
+  [[ $out_name_manual -eq 1 ]] || {
+    [[ -n "$out_namef" ]] || out_namef="%Y-%m-%d_%H-%M-%S_{desc}.{ext}"
+    out_name="$(fmt_name "$out_namef" "$format" "$out_desc" "$region")"
+  }
+
+  # TODO: use awk or sed instead of perl
+  out_name="$(perl -pe 's/\0|\/|[^[:ascii:]]//g' <<< "$out_name")"
+
+  out="$out_dir/$out_name"
+
+  [[ ! -e "$out" ]] || {
+    echo "$prog: error: file exists: $out" >&2
+    return 1
+  }
+
+  cmd=()
+  case "$mode_capture" in
+  image)
+    cmd+=(grim -g "$region" -t "$format" "${passthru_args[@]}" "$out")
+    ;;
+  video)
+    cmd+=(wf-recorder -g "$region" "${passthru_args[@]}" -f "$out")
+    ;;
+  esac
+
+  # local -a upload_cmd=()
+  [[ -z "$upload" ]] || case "$upload" in
+  drop)
+    upload_cmd=("$(type -P drop)" "$out") || {
+      echo "$prog: error: upload service helper not found: drop" >&2
+      return 1
+    }
+    ;;
+  imgur)
+    # TODO
+    # [[ "$mode_capture" == "image" ]] || {
+    #   echo "$prog: error: upload service imgur only supports images" >&2
+    #   return 1
+    # }
+    upload_cmd=("$(type -P imgur.sh)" "$out") || {
+      echo "$prog: error: upload service helper not found: imgur.sh" >&2
+      return 1
+    }
+    ;;
+  *)
+    echo "$prog: error: unsupported upload service: $upload" >&2
+    return 1
+    ;;
+  esac
+}
+
+function main() {
+  local -a args=("$@")
+  local -i i=0
+  local opt arg
+  while ((i < ${#args[@]})); do
+    arg=""
+    opt="${args[$i]}"
+
+    # argument not beginning with - ends options
+    if [[ (! "$opt" =~ ^-) || "$opt" == "--" ]]; then
+      rest=("${args[@]:$i:${#args[@]}}")
+      break
+    fi
+
+    # expand combined opts (e.g. -wNU -> -w -N -U)
+    if [[ "$opt" =~ ^-[[:alnum:]]{2,} ]]; then
+      local -a expanded=()
+      local -i j
+      for ((j = 1; j < ${#opt}; j++)); do
+        expanded+=("-${opt:$j:1}")
+      done
+      args=("${args[@]:0:$i}" "${expanded[@]}" "${args[@]:$((i + 1)):${#args[@]}}")
+      continue
+    fi
+
+    i=$((i + 1))
+
+    case "$opt" in
+    # populate the `arg` variable for options that require an argument
+    -U | --upload) ;&
+    -d | --dir) ;&
+    -n | --name) ;&
+    -f | --namef)
+      if ((i >= ${#args[@]})) || [[ "${args[$i]}" =~ ^- ]]; then
+        echo "$prog: error: $opt: expected argument" >&2
+        return 1
+      fi
+      arg="${args[$i]}"
+      i=$((i + 1))
+      ;;&
+
+    # populate the `arg` variable for options that accept optional an argument
+    # if there is a following positional parameter that doesn't start with a -
+    -I | --image) ;&
+    -V | --video) ;&
+    -r | --region) ;&
+    -c | --container) ;&
+    -w | --workspace) ;&
+    -o | --output)
+      if ((i < ${#args[@]})) && [[ ! "${args[$i]}" =~ ^- ]]; then
+        arg="${args[$i]}"
+        i=$((i + 1))
+      fi
+      ;;&
+
+    # General {{{
+    -h | --help)
+      usage
+      exit 0
+      ;;
+
+    -v | --version)
+      echo "$version"
+      exit 0
+      ;;
+
+    -x | --copy-path)
+      copy=1
+      ;;
+
+    -N | --notify)
+      notify=1
+      ;;
+
+    -R | --rofi)
+      if [[ $rofi -eq 0 ]]; then
+        rofi=1
+      fi
+      ;;
+
+    -U | --upload)
+      upload="$arg"
+      ;;
+    # }}}
+
+    # Capture Mode {{{
+    -I | --image)
+      mode_capture="image"
+      format="${arg:-}"
+      ;;
+
+    -V | --video)
+      mode_capture="video"
+      format="${arg:-}"
+      ;;
+    # }}}
+
+    # Capture Region {{{
+    -r | --region)
+      if [[ -n "$arg" ]]; then
+        if ! is_valid_region "$arg"; then
+          echo "$prog: error: invalid geometry: $arg" >&2
+          return 1
+        fi
+        selection="$(printf '%s\n%s\n' "$arg" "region")"
+      else
+        selection="$(printf '%s\n%s\n' "$(slurp)" "region")"
+      fi
+      ;;
+
+    -c | --container)
+      if [[ -n "$arg" ]]; then
+        if [[ "$arg" =~ ^(foc(us(ed)?)?)$ ]]; then
+          selection="$(containers_get_focused | select_node)"
+        else
+          local con_id="$arg"
+          selection="$(containers_by_id "$con_id" | select_node)"
+        fi
+      fi
+      if [[ -z "$selection" ]]; then
+        selection="$(containers_get_visible | select_node)"
+      fi
+      ;;
+
+    -w | --workspace)
+      if [[ -n "$arg" ]]; then
+        if [[ "$arg" =~ ^(foc(us(ed)?)?)$ ]]; then
+          selection="$(workspaces_get_focused | select_node)"
+        else
+          local ws="$arg"
+          selection="$(workspaces_by_name "$ws" | select_node)"
+        fi
+      fi
+      if [[ -z "$selection" ]]; then
+        selection="$(workspaces_get_visible | select_node)"
+      fi
+      ;;
+
+    -o | --output)
+      if [[ -n "$arg" ]]; then
+        if [[ "$arg" =~ ^(foc(us(ed)?)?)$ ]]; then
+          selection="$(outputs_get_focused | select_node)"
+        else
+          local output="$arg"
+          selection="$(outputs_by_name "$output" | select_node)"
+        fi
+      fi
+      if [[ -z "$selection" ]]; then
+        selection="$(outputs_get_active | select_node)"
+      fi
+      ;;
+
+    -a | --all)
+      selection="$(tree_by_id 1 | select_node)"
+      ;;
+    # }}}
+
+    # Output File {{{
+    -d | --dir)
+      out_dir="$(realpath -m "$arg")"
+      [[ -d "$out_dir" ]] || {
+        echo "$prog: error: not a directory: $out_dir" >&2
+        return 1
+      }
+      ;;
+
+    -n | --name)
+      out_name="$arg"
+      out_name_manual=1
+      ;;
+
+    -f | --namef)
+      out_namef="$arg"
+      ;;
+    # }}}
+
+    *)
+      echo "$prog: error: unknown option $opt" >&2
+      return 1
+      ;;
+    esac
+  done
+
+  for opt in "${rest[@]}"; do
+    if [[ $passthru -eq 0 ]]; then
+      if [[ "$opt" == "--" ]]; then
+        passthru=1
+        continue
+      fi
+      args+=("$opt")
+    else
+      passthru_args+=("$opt")
+    fi
+  done
+
+  parse_opts
+
+  if [[ $rofi -eq 1 ]]; then
+    menu_main
+  fi
+
+  capture
+}
+
+init
+
+for lib in "${require[@]}"; do
+  [[ -e "$lib" ]] || {
+    lib="$libdir/$lib"
+    [[ -e "$lib" ]] || {
+      echo "$prog: error: lib not found: $lib" >&2
+      exit 1
+    }
+  }
+  # shellcheck disable=1090
+  source "$lib" &> /dev/null || {
+    echo "$prog: error: failed sourcing lib: $lib" >&2
+    exit 1
+  }
+done
+
+trap 'exit 0' INT
+trap 'cleanup' EXIT
+
+main "$@"
