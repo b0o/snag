@@ -39,7 +39,7 @@ declare -a require=(
 
 # setup {{{
 declare -g basedir libdir runtimedir cachedir
-basedir="$(realpath -e "$(dirname "$0")")"
+basedir="$(realpath -e "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")")"
 libdir="${LIBDIR:-$(realpath -e "${basedir}/lib/")}"
 runtimedir="${XDG_RUNTIME_DIR:-/tmp}/snag"
 cachedir="${HOME}/.cache/snag"
