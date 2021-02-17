@@ -34,7 +34,7 @@ declare license="GPL-3.0-or-later"
 declare license_url="https://www.gnu.org/licenses/gpl-3.0.txt"
 
 declare -a require=(
-  "sway-util" # shellcheck source ../lib/sway-util
+  "sway-util"
 )
 
 # setup {{{
