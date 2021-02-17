@@ -19,7 +19,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # TODO: configuration file
-# TODO: ability for user to change default cachedir/runtimedir w/ env vars
 # TODO: screenshot history
 # TODO: edit screenshot w/ swappy
 
@@ -38,13 +37,11 @@ declare -a require=(
 )
 
 # setup {{{
-declare -g basedir libdir runtimedir cachedir
+declare -g basedir libdir runtimedir pidfile
 basedir="$(realpath -e "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")")"
 libdir="${LIBDIR:-$(realpath -e "${basedir}/lib/")}"
-runtimedir="${XDG_RUNTIME_DIR:-/tmp}/snag"
-cachedir="${HOME}/.cache/snag"
-
-declare -g pidfile="$runtimedir/pid"
+runtimedir="${XDG_RUNTIME_DIR:-/run}"
+pidfile="$runtimedir/snag.pid"
 # }}}
 
 # globals {{{
@@ -183,7 +180,6 @@ function kill_recursive() {
 
 function init() {
   [[ -d "$runtimedir" ]] || mkdir -p "$runtimedir"
-  [[ -d "$cachedir" ]] || mkdir -p "$cachedir"
 
   local -i pid=-1
   if [[ -e "$pidfile" ]]; then
