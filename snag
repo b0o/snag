@@ -150,9 +150,9 @@ Options:
 
                         {desc}    a description of what was selected:
                                     - if a region was selected: "region"
-                                    - if a window was selected:
-                                      - wayland apps: window's app_id
-                                      - xwayland apps: window's class property
+                                    - if a container was selected:
+                                      - wayland apps: container's app_id
+                                      - xwayland apps: container's class
                                     - if an output was selected: its name
                                     - if all outputs were selected: "all"
 
