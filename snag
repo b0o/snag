@@ -26,7 +26,7 @@ set -Eeuo pipefail
 shopt -s inherit_errexit
 
 declare prog="snag"
-declare version="v0.0.1"
+declare version="v0.0.2"
 declare authors=("Maddison Hellstrom <github.com/b0o>")
 declare repository="github.com/b0o/snag"
 declare license="GPL-3.0-or-later"
