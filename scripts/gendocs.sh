@@ -25,9 +25,10 @@ declare -g basedir reporoot readme
 basedir="$(realpath -e "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")")"
 reporoot="$(realpath -e "$basedir/..")"
 readme="$reporoot/README.md"
+usage_cmd="$reporoot/snag -h"
 
 function readme() {
-  awk '
+  awk -v "usage_cmd=$usage_cmd" '
     BEGIN {
       d = 0
     }
@@ -36,7 +37,7 @@ function readme() {
       d = 1
       print $0
       print "```"
-      system("./snag -h")
+      system(usage_cmd)
       print "```"
       next
     }
