@@ -114,6 +114,8 @@ License: GPL-3.0-or-later (https://www.gnu.org/licenses/gpl-3.0.txt)
 
 ## License
 
+<!-- LICENSE -->
 &copy; 2020-2021 Maddison Hellstrom
 
 Released under the GNU General Public License, version 3.0 or later.
+<!-- /LICENSE -->
