@@ -14,7 +14,7 @@ TODO
 
 <!-- USAGE -->
 ```
-snag v0.0.2 (github.com/b0o/snag)
+snag v0.1.0 (github.com/b0o/snag)
 
 Usage: snag [opts] [-- [pass-thru opts ..]]
 
