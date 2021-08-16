@@ -248,7 +248,7 @@ function _rofi() {
 
 function is_valid_region() {
   [[ $# -eq 1 && \
-  "$1" =~ ^[[:digit:]]{1,},[[:digit:]]{1,}[[:space:]][[:digit:]]{1,}x[[:digit:]]{1,}$ ]]
+  "$1" =~ ^[0-9]{1,},[0-9]{1,}[[:space:]][0-9]{1,}x[0-9]{1,}$ ]]
 }
 
 function fmt_name() {
