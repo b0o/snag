@@ -41,6 +41,12 @@ Options:
   -V [format] --video   Capture a video using wf-recorder.
                         [format] may be one of: mp4 (default), gif, webm.
 
+  Capture Quality:
+
+  --grim-quality        Set the grim JPEG filetype quality 0-100. Defaults to 80.
+
+  --grim-level          Set the grim PNG filetype compression level 0-9. Defaults to 6.
+
   Capture Region:
   If none of the following options are specified, the focused output will be
   captured by default.
@@ -106,7 +112,7 @@ To pass on arguments to the capture command (grim or wf-recorder), a -- can be
 passed after the final snag argument and any remaining arguments will be passed
 through to the capture command.
 
-(c) 2020-2021 Maddison Hellstrom <github.com/b0o>
+(c) 2020-2022 Maddison Hellstrom <github.com/b0o>
 
 License: GPL-3.0-or-later (https://www.gnu.org/licenses/gpl-3.0.txt)
 ```
@@ -115,7 +121,7 @@ License: GPL-3.0-or-later (https://www.gnu.org/licenses/gpl-3.0.txt)
 ## License
 
 <!-- LICENSE -->
-&copy; 2020-2021 Maddison Hellstrom
+&copy; 2020-2022 Maddison Hellstrom
 
 Released under the GNU General Public License, version 3.0 or later.
 <!-- /LICENSE -->

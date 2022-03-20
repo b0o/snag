@@ -64,13 +64,15 @@ declare -a rest=()
 declare -a cmd=()
 declare -a upload_cmd=()
 declare -i passthru=0
+declare -i grim_quality=80
+declare -i grim_level=6
 declare -a args=()
 declare -a passthru_args=()
 declare out_url=""
 # }}}
 
 function usage() {
-  mapfile -t usage << EOF
+  mapfile -t usage <<EOF
 $prog $version ($repository)
 
 Usage: $prog [opts] [-- [pass-thru opts ..]]
@@ -97,6 +99,12 @@ Options:
 
   -V [format] --video   Capture a video using wf-recorder.
                         [format] may be one of: mp4 (default), gif, webm.
+
+  Capture Quality:
+
+  --grim-quality        Set the grim JPEG filetype quality 0-100. Defaults to 80.
+
+  --grim-level          Set the grim PNG filetype compression level 0-9. Defaults to 6.
 
   Capture Region:
   If none of the following options are specified, the focused output will be
@@ -187,15 +195,15 @@ function init() {
 
       pid="$(head -1 "$pidfile")"
 
-      if [[ $pid -gt 1 ]] && ps "$pid" &> /dev/null; then
+      if [[ $pid -gt 1 ]] && ps "$pid" &>/dev/null; then
         # TODO: sanity check to ensure that $pid is actually a snag instance
-        kill_recursive <<< "$pid"
+        kill_recursive <<<"$pid"
         exit 0
       fi
     fi
     rm "$pidfile"
   fi
-  echo "$$" > "$pidfile"
+  echo "$$" >"$pidfile"
 }
 
 function cleanup() {
@@ -217,9 +225,9 @@ function cleanup() {
     copy_msg="Copied "
     wl-copy "${out_url:-$out}"
   }
-  [[ $notify -eq 0 ]] || notify-send -t 5000 -i "$out" "snag" "${copy_msg}${out_url:-$out}"
+  [[ $notify -eq 0 ]] || notify-send -t 5000 -i "$out" "snag" "$copy_msg${out_url:-$out}"
 
-  exit $code
+  exit "$code"
 }
 
 function handle() {
@@ -237,7 +245,7 @@ function _rofi() {
     fi
 
     if [[ ! $* =~ -m(onitor)?[[:space:]] ]]; then
-      mapfile -t xw_outputs <<< "$(xrandr | awk '/^.* connected/{ print $1 }')"
+      mapfile -t xw_outputs <<<"$(xrandr | awk '/^.* connected/{ print $1 }')"
       wl_output_idx="$(swaymsg -t get_outputs | jq 'to_entries | map(select(.value.focused == true))[0].key')"
       rofi_opts+=(-m "${xw_outputs[$wl_output_idx]}")
     fi
@@ -247,8 +255,7 @@ function _rofi() {
 }
 
 function is_valid_region() {
-  [[ $# -eq 1 && \
-  "$1" =~ ^[0-9]{1,},[0-9]{1,}[[:space:]][0-9]{1,}x[0-9]{1,}$ ]]
+  [[ $# -eq 1 && "$1" =~ ^[0-9]{1,},[0-9]{1,}[[:space:]][0-9]{1,}x[0-9]{1,}$ ]]
 }
 
 function fmt_name() {
@@ -256,7 +263,7 @@ function fmt_name() {
   local ext="$2"
   local desc="$3"
   local region="$4"
-  mapfile -t replace << "EOF"
+  mapfile -t replace <<"EOF"
     {
       gsub(/\{ext\}/, ext, $0)
       gsub(/\{desc\}/, desc, $0)
@@ -270,15 +277,15 @@ EOF
       -v "desc=$desc" \
       -v "region=$region" \
       "$(printf '%s\n' "${replace[@]}")" \
-      <<< "$fmt"
+      <<<"$fmt"
   )"
 }
 
 function slurp_multi() {
   local -a geoms=()
-  mapfile -t geoms <<< "$(sed -e '/^$/d')"
+  mapfile -t geoms <<<"$(sed -e '/^$/d')"
   if [[ ${#geoms[@]} -gt 1 ]]; then
-    slurp <<< "$(printf '%s\n' "${geoms[@]}")"
+    slurp <<<"$(printf '%s\n' "${geoms[@]}")"
   else
     [[ -n "${geoms[0]:-}" ]] || return 1
     echo "${geoms[0]:-}"
@@ -294,14 +301,15 @@ function select_node() {
     else
       node_rects+=("$l")
     fi
-  done <<< "$(jq -r "" 'if type != "array" then [ . ] else . end | .[] | .id, s::fmt_rect')"
+  done <<<"$(jq -r "" 'if type != "array" then [ . ] else . end | .[] | .id, s::fmt_rect')"
   ! [[ ${#node_ids[@]} -eq 0 || ${#node_rects[@]} -eq 0 || ${#node_ids[@]} -ne ${#node_rects[@]} ]] || return 1
 
   local sel_rect
-  sel_rect="$(slurp_multi <<< "$(printf '%s\n' "${node_rects[@]}")")"
+  sel_rect="$(slurp_multi <<<"$(printf '%s\n' "${node_rects[@]}")")"
 
   local desc="region"
-  for i in $(seq 0 $((${#node_ids[@]} - 1))); do
+  local i
+  while read -r i; do
     [[ ${node_rects[$i]} == "$sel_rect" ]] || continue
     desc="$(
       tree_by_id "${node_ids[$i]}" -r \
@@ -315,7 +323,7 @@ function select_node() {
            null
          end // "region"'
     )"
-  done
+  done < <(seq 0 $((${#node_ids[@]} - 1)))
 
   printf '%s\n%s\n' "$sel_rect" "$desc"
 }
@@ -355,7 +363,7 @@ function menu_opt_capture() {
 
   rofi_result=$(
     {
-      cat << EOF
+      cat <<EOF
 image / png
 image / ppm
 image / jpeg
@@ -363,8 +371,8 @@ video / mp4
 video / webm
 video / webp
 EOF
-    } \
-      | awk -v "n=$n" \
+    } |
+      awk -v "n=$n" \
         '{
             o = "→ ";
             if (FNR - 1 == n) {
@@ -373,10 +381,10 @@ EOF
               o = o $0
             }
             print o
-         }' \
-      | _rofi -dmenu -markup-rows -format i -i \
+         }' |
+      _rofi -dmenu -markup-rows -format i -i \
         -async-pre-read 0 \
-        -selected-row $n \
+        -selected-row "$n" \
         -p "Capture Mode"
   ) || return 1
 
@@ -395,12 +403,12 @@ function menu_opt_notify() {
 
   rofi_result=$(
     {
-      cat << eof
+      cat <<EOF
 0
 1
-eof
-    } \
-      | awk -v "n=$notify" \
+EOF
+    } |
+      awk -v "n=$notify" \
         '{
             o = "→ ";
             if (FNR - 1 == n) {
@@ -409,10 +417,10 @@ eof
               o = o $0
             }
             print o
-         }' \
-      | _rofi -dmenu -markup-rows -format i -i \
+         }' |
+      _rofi -dmenu -markup-rows -format i -i \
         -async-pre-read 0 \
-        -selected-row $notify \
+        -selected-row "$notify" \
         -p "Notify"
   ) || return 1
 
@@ -434,13 +442,13 @@ function menu_opt_upload() {
 
   rofi_result=$(
     {
-      cat << EOF
+      cat <<EOF
 imgur
 drop
 -
 EOF
-    } \
-      | awk -v "n=$n" \
+    } |
+      awk -v "n=$n" \
         '{
             o = "→ ";
             if (FNR - 1 == n) {
@@ -449,10 +457,10 @@ EOF
               o = o $0
             }
             print o
-         }' \
-      | _rofi -dmenu -markup-rows -format i -i \
+         }' |
+      _rofi -dmenu -markup-rows -format i -i \
         -async-pre-read 0 \
-        -selected-row $n \
+        -selected-row "$n" \
         -p "Upload"
   ) || return 1
 
@@ -468,12 +476,12 @@ function menu_opt_copy() {
 
   rofi_result=$(
     {
-      cat << EOF
+      cat <<EOF
 0
 1
 EOF
-    } \
-      | awk -v "n=$copy" \
+    } |
+      awk -v "n=$copy" \
         '{
             o = "→ ";
             if (FNR - 1 == n) {
@@ -482,10 +490,10 @@ EOF
               o = o $0
             }
             print o
-         }' \
-      | _rofi -dmenu -markup-rows -format i -i \
+         }' |
+      _rofi -dmenu -markup-rows -format i -i \
         -async-pre-read 0 \
-        -selected-row $copy \
+        -selected-row "$copy" \
         -p "Copy"
   ) || return 1
 
@@ -501,8 +509,8 @@ function menu_opt_out_dir() {
     rofi_result="$(
       cat \
         <(echo -e "→ [Accept]\n→ [Custom]\n..\0icon\x1ffolder") \
-        <(find "$out_dir" -mindepth 1 -maxdepth 1 -type d | awk '{ print $0 "\0icon\x1ffolder" }') \
-        | _rofi -dmenu -markup-rows -i \
+        <(find "$out_dir" -mindepth 1 -maxdepth 1 -type d | awk '{ print $0 "\0icon\x1ffolder" }') |
+        _rofi -dmenu -markup-rows -i \
           -async-pre-read 0 \
           -mesg "<b>${out_dir:-}</b>" \
           -p "Output Dir"
@@ -575,7 +583,7 @@ function menu_opt_region() {
   else
     rofi_result=$(
       {
-        cat << EOF
+        cat <<EOF
 → &lt;Select Region&gt;
 → &lt;Select Container&gt;
 → &lt;Select Workspace&gt;
@@ -583,8 +591,8 @@ function menu_opt_region() {
 → &lt;Select All&gt;
 → [Custom]
 EOF
-      } \
-        | _rofi -dmenu -markup-rows -format i -i \
+      } |
+        _rofi -dmenu -markup-rows -format i -i \
           -async-pre-read 0 \
           -selected-row 0 \
           -p "Region"
@@ -640,7 +648,7 @@ function menu_main() {
     rofi_exit=0
     rofi_result=$(
       {
-        cat << EOF
+        cat <<EOF
 <span weight='heavy'>Options</span>
 Capture Mode:     <span style='italic'>${mode_capture:--}${mode_capture:+${format:+ / $format}}</span>
 Region:           <span style='italic'>${region:--}</span>
@@ -658,10 +666,10 @@ Output Filename:  <span style='italic'>${out_name:--}</span>
 
 <span weight='heavy'>→ Capture</span>       <span size='small' alpha='70%'>&lt;C-Return&gt;</span>
 EOF
-      } \
-        | _rofi -dmenu -markup-rows -format i -i \
+      } |
+        _rofi -dmenu -markup-rows -format i -i \
           -async-pre-read 0 \
-          -selected-row $rofi_prev \
+          -selected-row "$rofi_prev" \
           -kb-accept-custom "Ctrl+Alt+Return" \
           -kb-clear-line "Ctrl+Alt+w" \
           -kb-move-front "Ctrl+Alt+a" \
@@ -730,7 +738,7 @@ EOF
     27) rofi_prev=3 notify=$((notify * -1 + 1)) ;;
     28) rofi_prev=5 copy=$((copy * -1 + 1)) ;;
 
-    *) return $rofi_exit ;;
+    *) return "$rofi_exit" ;;
     esac
 
     case $rofi_result in
@@ -770,7 +778,7 @@ function parse_opts() {
   [[ -n "$selection" ]] || selection="$(outputs_get_focused | select_node)"
 
   local -a selection_result=()
-  mapfile -t selection_result <<< "$selection"
+  mapfile -t selection_result <<<"$selection"
 
   [[ ${#selection_result[@]} -eq 2 ]] || {
     echo "$prog: error: selection failed" >&2
@@ -786,7 +794,7 @@ function parse_opts() {
   }
 
   # TODO: use awk or sed instead of perl
-  out_name="$(perl -pe 's/\0|\/|[^[:ascii:]]//g' <<< "$out_name")"
+  out_name="$(perl -pe 's/\0|\/|[^[:ascii:]]//g' <<<"$out_name")"
 
   out="$out_dir/$out_name"
 
@@ -798,7 +806,13 @@ function parse_opts() {
   cmd=()
   case "$mode_capture" in
   image)
-    cmd+=(grim -g "$region" -t "$format" "${passthru_args[@]}" "$out")
+    local grim_opts=()
+    if [[ "$format" == "jpeg" ]]; then
+      grim_opts+=(-q "$grim_quality")
+    elif [[ "$format" == "png" ]]; then
+      grim_opts+=(-l "$grim_level")
+    fi
+    cmd+=(grim -g "$region" -t "$format" "${grim_opts[@]}" "${passthru_args[@]}" "$out")
     ;;
   video)
     cmd+=(wf-recorder -g "$region" "${passthru_args[@]}" -f "$out")
@@ -879,7 +893,9 @@ function main() {
     -r | --region) ;&
     -c | --container) ;&
     -w | --workspace) ;&
-    -o | --output)
+    -o | --output) ;&
+   --grim-quality) ;&
+   --grim-level)
       if ((i < ${#args[@]})) && [[ ! "${args[$i]}" =~ ^- ]]; then
         arg="${args[$i]}"
         i=$((i + 1))
@@ -926,6 +942,16 @@ function main() {
     -V | --video)
       mode_capture="video"
       format="${arg:-}"
+      ;;
+    # }}}
+
+    # Capture Quality {{{
+    --grim-quality)
+      grim_quality="$arg"
+      ;;
+
+    --grim-level)
+      grim_level="$arg"
       ;;
     # }}}
 
@@ -1047,7 +1073,7 @@ for lib in "${require[@]}"; do
     }
   }
   # shellcheck disable=1090
-  source "$lib" &> /dev/null || {
+  source "$lib" &>/dev/null || {
     echo "$prog: error: failed sourcing lib: $lib" >&2
     exit 1
   }
