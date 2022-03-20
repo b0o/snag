@@ -1,4 +1,4 @@
-# snag [![version](https://img.shields.io/github/v/tag/b0o/snag?style=flat&color=yellow&label=version&sort=semver)](https://github.com/b0o/snag/releases) [![license: gpl-3.0-or-later](https://img.shields.io/github/license/b0o/snag?style=flat&color=green)](https://opensource.org/licenses/GPL-3.0)
+# snag [![version](https://img.shields.io/github/v/tag/b0o/snag?style=flat&color=yellow&label=version&sort=semver)](https://github.com/b0o/snag/releases) [![license: MIT](https://img.shields.io/github/license/b0o/snag?style=flat&color=green)](https://opensource.org/licenses/MIT)
 
 > snag screenshots and screencasts in sway
 
@@ -114,7 +114,7 @@ through to the capture command.
 
 (c) 2020-2022 Maddison Hellstrom <github.com/b0o>
 
-License: GPL-3.0-or-later (https://www.gnu.org/licenses/gpl-3.0.txt)
+License: MIT (https://mit-license.org/)
 ```
 <!-- /USAGE -->
 
@@ -123,5 +123,5 @@ License: GPL-3.0-or-later (https://www.gnu.org/licenses/gpl-3.0.txt)
 <!-- LICENSE -->
 &copy; 2020-2022 Maddison Hellstrom
 
-Released under the GNU General Public License, version 3.0 or later.
+Released under the MIT License.
 <!-- /LICENSE -->

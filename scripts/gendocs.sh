@@ -29,18 +29,18 @@ reporoot="$(realpath -m "$basedir/..")"
 
 # gendocs configuration {{{
 
-declare -g snag="${reporoot}/snag"
+declare -g snag="$reporoot/snag"
 
 declare -gA targets=(
   [readme]="$reporoot/README.md"
 )
 
 function target_readme() {
-  section -s USAGE -c <<< "$("$snag" -h 2>&1)"
-  section -s LICENSE << EOF
+  section -s USAGE -c <<<"$("$snag" -h 2>&1)"
+  section -s LICENSE <<EOF
 &copy; 2020-$(date +%Y) Maddison Hellstrom
 
-Released under the GNU General Public License, version 3.0 or later.
+Released under the MIT License.
 EOF
 }
 
@@ -92,7 +92,7 @@ function section() {
 function regen_section() {
   local section="$1"
   local content="${sections[$section]}"
-  < "$target" awk -v "section=$section" -v "content=$content" '
+  awk <"$target" -v "section=$section" -v "content=$content" '
     BEGIN {
       d = 0
     }
@@ -151,13 +151,13 @@ function main() {
       return 1
     }
     sections=()
-    "target_${t}" || {
+    "target_$t" || {
       echo "unknown target: $t"
       return 1
     }
     local s
     for s in "${!sections[@]}"; do
-      regen_section "$s" > "${target}_"
+      regen_section "$s" >"${target}_"
       mv "${target}_" "$target"
     done
   done
