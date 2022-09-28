@@ -33,6 +33,8 @@ Options:
 
   -R           --rofi   Use rofi as an interactive snag UI.
 
+  -D <ms>      --delay  Delay capture for <ms> milliseconds.
+
   Capture Mode:
   -I [format] --image   Capture a still image using grim.
                         This is the default mode.

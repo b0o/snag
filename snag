@@ -35,6 +35,7 @@ pidfile="$runtimedir/snag.pid"
 # globals {{{
 declare -i help=0
 declare -i copy=0
+declare -i delay=0
 declare upload=""
 declare -i notify=0
 declare -i rofi=0
@@ -79,6 +80,8 @@ Options:
                         <service> may be one of: drop, imgur (image only)
 
   -R           --rofi   Use rofi as an interactive snag UI.
+
+  -D <ms>      --delay  Delay capture for <ms> milliseconds.
 
   Capture Mode:
   -I [format] --image   Capture a still image using grim.
@@ -316,7 +319,17 @@ function select_node() {
   printf '%s\n%s\n' "$sel_rect" "$desc"
 }
 
+function delay() {
+  local secs
+  secs="$(awk '{ print $0 / 1000.0 }' <<<"$delay")"
+  if ((delay > 0)); then
+    echo "delay ${delay}ms / ${secs}s" >&2
+    sleep "$secs"
+  fi
+}
+
 function capture() {
+  delay
   echo "capture: ${cmd[*]}" >&2
   "${cmd[@]}" >&2 || {
     echo "$prog: error: capture failed" >&2
@@ -416,6 +429,23 @@ EOF
   0) notify=0 ;;
   1) notify=1 ;;
   esac
+}
+
+function menu_opt_delay() {
+  local -i rofi_result
+
+  rofi_result=$(
+    _rofi -dmenu -markup-rows -format f -i \
+      -async-pre-read 0 \
+      -filter "$delay" \
+      -mesg "<span size='small' alpha='70%'>Delay capture for this many milliseconds</span>" \
+      -p "Delay"
+  ) || return 1
+
+  if ((rofi_result < 0)); then
+    return 1
+  fi
+  delay="${rofi_result:-$delay}"
 }
 
 function menu_opt_upload() {
@@ -641,6 +671,7 @@ function menu_main() {
 Capture Mode:     <span style='italic'>${mode_capture:--}${mode_capture:+${format:+ / $format}}</span>
 Region:           <span style='italic'>${region:--}</span>
 Notify:           <span style='italic'>${notify:-0}</span>
+Delay:            <span style='italic'>${delay:-0}</span>
 Upload:           <span style='italic'>${upload:--}</span>
 Copy:             <span style='italic'>${copy:-0}</span>
 Output Dir:       <span style='italic'>${out_dir:--}</span>
@@ -688,17 +719,17 @@ EOF
 
     case $rofi_exit in
     0) ;;
-    10) rofi_result=9 menu_finished=1 ;;
-    11) rofi_result=10 menu_finished=1 ;;
-    12) rofi_result=11 menu_finished=1 ;;
-    13) rofi_result=12 menu_finished=1 ;;
-    14) rofi_result=13 menu_finished=1 ;;
-    15) rofi_result=15 menu_finished=1 ;;
-    16) rofi_result=9 ;;
-    17) rofi_result=10 ;;
-    18) rofi_result=11 ;;
-    19) rofi_result=12 ;;
-    20) rofi_result=13 ;;
+    10) rofi_result=10 menu_finished=1 ;;
+    11) rofi_result=11 menu_finished=1 ;;
+    12) rofi_result=12 menu_finished=1 ;;
+    13) rofi_result=13 menu_finished=1 ;;
+    14) rofi_result=14 menu_finished=1 ;;
+    15) rofi_result=16 menu_finished=1 ;;
+    16) rofi_result=10 ;;
+    17) rofi_result=11 ;;
+    18) rofi_result=12 ;;
+    19) rofi_result=13 ;;
+    20) rofi_result=14 ;;
 
     21 | 22 | 23 | 24 | 25 | 26 | 27 | 28)
       rofi_result=0
@@ -721,10 +752,10 @@ EOF
       *) upload="imgur" ;;
       esac
       ;;
-    25) rofi_prev=4 upload="imgur" ;;
-    26) rofi_prev=4 upload="drop" ;;
+    25) rofi_prev=5 upload="imgur" ;;
+    26) rofi_prev=5 upload="drop" ;;
     27) rofi_prev=3 notify=$((notify * -1 + 1)) ;;
-    28) rofi_prev=5 copy=$((copy * -1 + 1)) ;;
+    28) rofi_prev=6 copy=$((copy * -1 + 1)) ;;
 
     *) return "$rofi_exit" ;;
     esac
@@ -734,21 +765,22 @@ EOF
     1) menu_opt_capture || true ;;
     2) menu_opt_region || true ;;
     3) menu_opt_notify || true ;;
-    4) menu_opt_upload || true ;;
-    5) menu_opt_copy || true ;;
-    6) menu_opt_out_dir || true ;;
-    7)
+    4) menu_opt_delay || true ;;
+    5) menu_opt_upload || true ;;
+    6) menu_opt_copy || true ;;
+    7) menu_opt_out_dir || true ;;
+    8)
       menu_opt_out_name || true
       # if [[ -n "$out_name" ]]; then
       #   out_namef=""
       # fi
       ;;
-    9) menu_opt_region 0 || true ;;
-    10) menu_opt_region 1 || true ;;
-    11) menu_opt_region 2 || true ;;
-    12) menu_opt_region 3 || true ;;
-    13) menu_opt_region 4 || true ;;
-    15) menu_finished=1 ;;
+    10) menu_opt_region 0 || true ;;
+    11) menu_opt_region 1 || true ;;
+    12) menu_opt_region 2 || true ;;
+    13) menu_opt_region 3 || true ;;
+    14) menu_opt_region 4 || true ;;
+    16) menu_finished=1 ;;
     *)
       continue
       ;;
@@ -862,6 +894,7 @@ function main() {
 
     case "$opt" in
     # populate the `arg` variable for options that require an argument
+    -D | --delay) ;&
     -U | --upload) ;&
     -d | --dir) ;&
     -n | --name) ;&
@@ -882,8 +915,8 @@ function main() {
     -c | --container) ;&
     -w | --workspace) ;&
     -o | --output) ;&
-   --grim-quality) ;&
-   --grim-level)
+    --grim-quality) ;&
+    --grim-level)
       if ((i < ${#args[@]})) && [[ ! "${args[$i]}" =~ ^- ]]; then
         arg="${args[$i]}"
         i=$((i + 1))
@@ -914,6 +947,10 @@ function main() {
       if [[ $rofi -eq 0 ]]; then
         rofi=1
       fi
+      ;;
+
+    -D | --delay)
+      delay="$arg"
       ;;
 
     -U | --upload)
