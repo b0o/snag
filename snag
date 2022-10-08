@@ -36,6 +36,7 @@ pidfile="$runtimedir/snag.pid"
 declare -i help=0
 declare -i copy=0
 declare -i delay=0
+declare -i cursor=0
 declare upload=""
 declare -i notify=0
 declare -i rofi=0
@@ -82,6 +83,8 @@ Options:
   -R           --rofi   Use rofi as an interactive snag UI.
 
   -D <ms>      --delay  Delay capture for <ms> milliseconds.
+
+  -C           --cursor Include cursor in captures (image only).
 
   Capture Mode:
   -I [format] --image   Capture a still image using grim.
@@ -448,6 +451,38 @@ function menu_opt_delay() {
   delay="${rofi_result:-$delay}"
 }
 
+function menu_opt_cursor() {
+  local -i rofi_result=0
+
+  rofi_result=$(
+    {
+      cat <<EOF
+0
+1
+EOF
+    } |
+      awk -v "n=$cursor" \
+        '{
+            o = "→ ";
+            if (FNR - 1 == n) {
+              o = o "<span weight=\"heavy\">[" $0 "]</span>"
+            } else {
+              o = o $0
+            }
+            print o
+         }' |
+      _rofi -dmenu -markup-rows -format i -i \
+        -async-pre-read 0 \
+        -selected-row "$cursor" \
+        -p "Cursor"
+  ) || return 1
+
+  case $rofi_result in
+  0) cursor=0 ;;
+  1) cursor=1 ;;
+  esac
+}
+
 function menu_opt_upload() {
   local -i rofi_result=0
   local -i n=-1
@@ -670,18 +705,19 @@ function menu_main() {
       "Region:           <span style='italic'>${region:--}</span>"                                             # rofi_result=2
       "Notify:           <span style='italic'>${notify:-0}</span>"                                             # rofi_result=3
       "Delay:            <span style='italic'>${delay:-0}</span>"                                              # rofi_result=4
-      "Upload:           <span style='italic'>${upload:--}</span>"                                             # rofi_result=5
-      "Copy:             <span style='italic'>${copy:-0}</span>"                                               # rofi_result=6
-      "Output Dir:       <span style='italic'>${out_dir:--}</span>"                                            # rofi_result=7
-      "Output Filename:  <span style='italic'>${out_name:--}</span>"                                           # rofi_result=8
-      ""                                                                                                       # rofi_result=9
-      "→ Capture Region    <span size='small' alpha='70%'>&lt;C-r&gt;</span>"                                  # rofi_result=10
-      "→ Capture Container <span size='small' alpha='70%'>&lt;C-c&gt;</span>"                                  # rofi_result=11
-      "→ Capture Workspace <span size='small' alpha='70%'>&lt;C-w&gt;</span>"                                  # rofi_result=12
-      "→ Capture Output    <span size='small' alpha='70%'>&lt;C-o&gt;</span>"                                  # rofi_result=13
-      "→ Capture All       <span size='small' alpha='70%'>&lt;C-a&gt;</span>"                                  # rofi_result=14
-      ""                                                                                                       # rofi_result=15
-      "<span weight='heavy'>→ Capture</span>       <span size='small' alpha='70%'>&lt;C-Return&gt;</span>"     # rofi_result=16
+      "Cursor:           <span style='italic'>${cursor:-0}</span>"                                             # rofi_result=5
+      "Upload:           <span style='italic'>${upload:--}</span>"                                             # rofi_result=6
+      "Copy:             <span style='italic'>${copy:-0}</span>"                                               # rofi_result=7
+      "Output Dir:       <span style='italic'>${out_dir:--}</span>"                                            # rofi_result=8
+      "Output Filename:  <span style='italic'>${out_name:--}</span>"                                           # rofi_result=9
+      ""                                                                                                       # rofi_result=10
+      "→ Capture Region    <span size='small' alpha='70%'>&lt;C-r&gt;</span>"                                  # rofi_result=11
+      "→ Capture Container <span size='small' alpha='70%'>&lt;C-c&gt;</span>"                                  # rofi_result=12
+      "→ Capture Workspace <span size='small' alpha='70%'>&lt;C-w&gt;</span>"                                  # rofi_result=13
+      "→ Capture Output    <span size='small' alpha='70%'>&lt;C-o&gt;</span>"                                  # rofi_result=14
+      "→ Capture All       <span size='small' alpha='70%'>&lt;C-a&gt;</span>"                                  # rofi_result=15
+      ""                                                                                                       # rofi_result=16
+      "<span weight='heavy'>→ Capture</span>       <span size='small' alpha='70%'>&lt;C-Return&gt;</span>"     # rofi_result=17
     )
     local -a rofi_opts=(
       -dmenu
@@ -724,22 +760,22 @@ function menu_main() {
 
     # rofi -kb-custom-{1-19} map to rofi_exit {10-28}
 
-    10) rofi_result=10 menu_finished=1 ;; # Capture Region
-    11) rofi_result=11 menu_finished=1 ;; # Capture Container
-    12) rofi_result=12 menu_finished=1 ;; # Capture Window
-    13) rofi_result=13 menu_finished=1 ;; # Capture Output
-    14) rofi_result=14 menu_finished=1 ;; # Capture All
-    15) rofi_result=16 menu_finished=1 ;; # Capture
+    10) rofi_result=11 menu_finished=1 ;; # Capture Region
+    11) rofi_result=12 menu_finished=1 ;; # Capture Container
+    12) rofi_result=13 menu_finished=1 ;; # Capture Window
+    13) rofi_result=14 menu_finished=1 ;; # Capture Output
+    14) rofi_result=15 menu_finished=1 ;; # Capture All
+    15) rofi_result=17 menu_finished=1 ;; # Capture
 
     16 | 17 | 18 | 19 | 20)
       rofi_prev=2
       ;;&
 
-    16) rofi_result=10 ;; # Select Region
-    17) rofi_result=11 ;; # Select Container
-    18) rofi_result=12 ;; # Select Window
-    19) rofi_result=13 ;; # Select Output
-    20) rofi_result=14 ;; # Select All
+    16) rofi_result=11 ;; # Select Region
+    17) rofi_result=12 ;; # Select Container
+    18) rofi_result=13 ;; # Select Window
+    19) rofi_result=14 ;; # Select Output
+    20) rofi_result=15 ;; # Select All
 
     21 | 22 | 23 | 24 | 25 | 26 | 27 | 28)
       # rofi_exit codes 21-28 do not enter sub-menus, so reset rofi_result to 0
@@ -780,21 +816,22 @@ function menu_main() {
     2) menu_opt_region || true ;;
     3) menu_opt_notify || true ;;
     4) menu_opt_delay || true ;;
-    5) menu_opt_upload || true ;;
-    6) menu_opt_copy || true ;;
-    7) menu_opt_out_dir || true ;;
-    8)
+    5) menu_opt_cursor || true ;;
+    6) menu_opt_upload || true ;;
+    7) menu_opt_copy || true ;;
+    8) menu_opt_out_dir || true ;;
+    9)
       menu_opt_out_name || true
       # if [[ -n "$out_name" ]]; then
       #   out_namef=""
       # fi
       ;;
-    10) menu_opt_region 0 || true ;;
-    11) menu_opt_region 1 || true ;;
-    12) menu_opt_region 2 || true ;;
-    13) menu_opt_region 3 || true ;;
-    14) menu_opt_region 4 || true ;;
-    16) menu_finished=1 ;;
+    11) menu_opt_region 0 || true ;;
+    12) menu_opt_region 1 || true ;;
+    13) menu_opt_region 2 || true ;;
+    14) menu_opt_region 3 || true ;;
+    15) menu_opt_region 4 || true ;;
+    17) menu_finished=1 ;;
     *)
       continue
       ;;
@@ -845,6 +882,9 @@ function parse_opts() {
       grim_opts+=(-q "$grim_quality")
     elif [[ "$format" == "png" ]]; then
       grim_opts+=(-l "$grim_level")
+    fi
+    if [[ $cursor -eq 1 ]]; then
+      grim_opts+=(-c)
     fi
     cmd+=(grim -g "$region" -t "$format" "${grim_opts[@]}" "${passthru_args[@]}" "$out")
     ;;
@@ -965,6 +1005,10 @@ function main() {
 
     -D | --delay)
       delay="$arg"
+      ;;
+
+    -C | --cursor)
+      cursor=1
       ;;
 
     -U | --upload)
