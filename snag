@@ -664,98 +664,112 @@ function menu_main() {
   while [[ $menu_finished -eq 0 ]]; do
     # rofi_result=1
     rofi_exit=0
-    rofi_result=$(
-      {
-        cat <<EOF
-<span weight='heavy'>Options</span>
-Capture Mode:     <span style='italic'>${mode_capture:--}${mode_capture:+${format:+ / $format}}</span>
-Region:           <span style='italic'>${region:--}</span>
-Notify:           <span style='italic'>${notify:-0}</span>
-Delay:            <span style='italic'>${delay:-0}</span>
-Upload:           <span style='italic'>${upload:--}</span>
-Copy:             <span style='italic'>${copy:-0}</span>
-Output Dir:       <span style='italic'>${out_dir:--}</span>
-Output Filename:  <span style='italic'>${out_name:--}</span>
-
-→ Capture Region    <span size='small' alpha='70%'>&lt;C-r&gt;</span>
-→ Capture Container <span size='small' alpha='70%'>&lt;C-c&gt;</span>
-→ Capture Workspace <span size='small' alpha='70%'>&lt;C-w&gt;</span>
-→ Capture Output    <span size='small' alpha='70%'>&lt;C-o&gt;</span>
-→ Capture All       <span size='small' alpha='70%'>&lt;C-a&gt;</span>
-
-<span weight='heavy'>→ Capture</span>       <span size='small' alpha='70%'>&lt;C-Return&gt;</span>
-EOF
-      } |
-        _rofi -dmenu -markup-rows -format i -i \
-          -async-pre-read 0 \
-          -selected-row "$rofi_prev" \
-          -kb-accept-custom "Ctrl+Alt+Return" \
-          -kb-clear-line "Ctrl+Alt+w" \
-          -kb-move-front "Ctrl+Alt+a" \
-          -kb-custom-1 "Ctrl+r" \
-          -kb-custom-2 "Ctrl+c" \
-          -kb-custom-3 "Ctrl+w" \
-          -kb-custom-4 "Ctrl+o" \
-          -kb-custom-5 "Ctrl+a" \
-          -kb-custom-6 "Ctrl+Return" \
-          -kb-custom-7 "Alt+r" \
-          -kb-custom-8 "Alt+c" \
-          -kb-custom-9 "Alt+w" \
-          -kb-custom-10 "Alt+o" \
-          -kb-custom-11 "Alt+a" \
-          -kb-custom-12 "Alt+m" \
-          -kb-custom-13 "Alt+i" \
-          -kb-custom-14 "Alt+v" \
-          -kb-custom-15 "Alt+u" \
-          -kb-custom-16 "Alt+I" \
-          -kb-custom-17 "Alt+D" \
-          -kb-custom-18 "Alt+n" \
-          -kb-custom-19 "Alt+x" \
-          -mesg "<span size='small' alpha='70%'>&lt;M-m&gt; mode toggle / &lt;M-i&gt; image mode / &lt;M-v&gt; video mode / &lt;M-u&gt; upload toggle / &lt;M-S-i&gt; imgur upload / &lt;M-S-d&gt; drop upload / &lt;M-n&gt; notify toggle / &lt;M-x&gt; copy toggle</span>" \
-          -mesg "foo" \
-          -p "snag"
-    ) || rofi_exit=$?
+    local -a rofi_input=(
+      "<span weight='heavy'>Options</span>"                                                                    # rofi_result=0
+      "Capture Mode:     <span style='italic'>${mode_capture:--}${mode_capture:+${format:+ / $format}}</span>" # rofi_result=1
+      "Region:           <span style='italic'>${region:--}</span>"                                             # rofi_result=2
+      "Notify:           <span style='italic'>${notify:-0}</span>"                                             # rofi_result=3
+      "Delay:            <span style='italic'>${delay:-0}</span>"                                              # rofi_result=4
+      "Upload:           <span style='italic'>${upload:--}</span>"                                             # rofi_result=5
+      "Copy:             <span style='italic'>${copy:-0}</span>"                                               # rofi_result=6
+      "Output Dir:       <span style='italic'>${out_dir:--}</span>"                                            # rofi_result=7
+      "Output Filename:  <span style='italic'>${out_name:--}</span>"                                           # rofi_result=8
+      ""                                                                                                       # rofi_result=9
+      "→ Capture Region    <span size='small' alpha='70%'>&lt;C-r&gt;</span>"                                  # rofi_result=10
+      "→ Capture Container <span size='small' alpha='70%'>&lt;C-c&gt;</span>"                                  # rofi_result=11
+      "→ Capture Workspace <span size='small' alpha='70%'>&lt;C-w&gt;</span>"                                  # rofi_result=12
+      "→ Capture Output    <span size='small' alpha='70%'>&lt;C-o&gt;</span>"                                  # rofi_result=13
+      "→ Capture All       <span size='small' alpha='70%'>&lt;C-a&gt;</span>"                                  # rofi_result=14
+      ""                                                                                                       # rofi_result=15
+      "<span weight='heavy'>→ Capture</span>       <span size='small' alpha='70%'>&lt;C-Return&gt;</span>"     # rofi_result=16
+    )
+    local -a rofi_opts=(
+      -dmenu
+      -markup-rows
+      -format i
+      -i
+      -async-pre-read 0
+      -selected-row "$rofi_prev"
+      -kb-accept-custom "Ctrl+Alt+Return"
+      -kb-clear-line "Ctrl+Alt+w"
+      -kb-move-front "Ctrl+Alt+a"
+      -kb-custom-1 "Ctrl+r"      # Capture Region      rofi_exit=10
+      -kb-custom-2 "Ctrl+c"      # Capture Container   rofi_exit=11
+      -kb-custom-3 "Ctrl+w"      # Capture Window      rofi_exit=12
+      -kb-custom-4 "Ctrl+o"      # Capture Output      rofi_exit=13
+      -kb-custom-5 "Ctrl+a"      # Capture All         rofi_exit=14
+      -kb-custom-6 "Ctrl+Return" # Capture             rofi_exit=15
+      -kb-custom-7 "Alt+r"       # Select Region       rofi_exit=16
+      -kb-custom-8 "Alt+c"       # Select Container    rofi_exit=17
+      -kb-custom-9 "Alt+w"       # Select Window       rofi_exit=18
+      -kb-custom-10 "Alt+o"      # Select Output       rofi_exit=19
+      -kb-custom-11 "Alt+a"      # Select All          rofi_exit=20
+      -kb-custom-12 "Alt+m"      # Mode Toggle         rofi_exit=21
+      -kb-custom-13 "Alt+i"      # Mode Image          rofi_exit=22
+      -kb-custom-14 "Alt+v"      # Move Video          rofi_exit=23
+      -kb-custom-15 "Alt+u"      # Upload Toggle       rofi_exit=24
+      -kb-custom-16 "Alt+I"      # Upload Imgur        rofi_exit=25
+      -kb-custom-17 "Alt+D"      # Upload Drop         rofi_exit=26
+      -kb-custom-18 "Alt+n"      # Notify Toggle       rofi_exit=27
+      -kb-custom-19 "Alt+x"      # Copy Toggle         rofi_exit=28
+      -mesg "<span size='small' alpha='70%'>&lt;M-m&gt; mode toggle / &lt;M-i&gt; image mode / &lt;M-v&gt; video mode / &lt;M-u&gt; upload toggle / &lt;M-S-i&gt; imgur upload / &lt;M-S-d&gt; drop upload / &lt;M-n&gt; notify toggle / &lt;M-x&gt; copy toggle</span>"
+      -mesg "foo"
+      -p "snag"
+    )
+    rofi_result=$(_rofi "${rofi_opts[@]}" < <(printf '%s\n' "${rofi_input[@]}")) || rofi_exit=$?
     rofi_prev=$rofi_result
 
     case $rofi_exit in
     0) ;;
-    10) rofi_result=10 menu_finished=1 ;;
-    11) rofi_result=11 menu_finished=1 ;;
-    12) rofi_result=12 menu_finished=1 ;;
-    13) rofi_result=13 menu_finished=1 ;;
-    14) rofi_result=14 menu_finished=1 ;;
-    15) rofi_result=16 menu_finished=1 ;;
-    16) rofi_result=10 ;;
-    17) rofi_result=11 ;;
-    18) rofi_result=12 ;;
-    19) rofi_result=13 ;;
-    20) rofi_result=14 ;;
+
+    # rofi -kb-custom-{1-19} map to rofi_exit {10-28}
+
+    10) rofi_result=10 menu_finished=1 ;; # Capture Region
+    11) rofi_result=11 menu_finished=1 ;; # Capture Container
+    12) rofi_result=12 menu_finished=1 ;; # Capture Window
+    13) rofi_result=13 menu_finished=1 ;; # Capture Output
+    14) rofi_result=14 menu_finished=1 ;; # Capture All
+    15) rofi_result=16 menu_finished=1 ;; # Capture
+
+    16 | 17 | 18 | 19 | 20)
+      rofi_prev=2
+      ;;&
+
+    16) rofi_result=10 ;; # Select Region
+    17) rofi_result=11 ;; # Select Container
+    18) rofi_result=12 ;; # Select Window
+    19) rofi_result=13 ;; # Select Output
+    20) rofi_result=14 ;; # Select All
 
     21 | 22 | 23 | 24 | 25 | 26 | 27 | 28)
+      # rofi_exit codes 21-28 do not enter sub-menus, so reset rofi_result to 0
       rofi_result=0
       ;;&
 
-    21)
+    21) # Mode Toggle
       rofi_prev=1
       case "$mode_capture" in
       image) mode_capture="video" format="mp4" ;;
       video) mode_capture="image" format="png" ;;
       esac
       ;;
-    22) rofi_prev=1 mode_capture="image" format="png" ;;
-    23) rofi_prev=1 mode_capture="video" format="mp4" ;;
-    24)
-      rofi_prev=4
+    22) rofi_prev=1 mode_capture="image" format="png" ;; # Mode Image
+    23) rofi_prev=1 mode_capture="video" format="mp4" ;; # Mode Video
+
+    24) # Upload Toggle
+      rofi_prev=5
       case "$upload" in
       imgur) upload="drop" ;;
       drop) upload="" ;;
       *) upload="imgur" ;;
       esac
       ;;
-    25) rofi_prev=5 upload="imgur" ;;
-    26) rofi_prev=5 upload="drop" ;;
-    27) rofi_prev=3 notify=$((notify * -1 + 1)) ;;
-    28) rofi_prev=6 copy=$((copy * -1 + 1)) ;;
+    25) rofi_prev=5 upload="imgur" ;; # Upload Imgur
+    26) rofi_prev=5 upload="drop" ;;  # Upload Drop
+
+    27) rofi_prev=3 notify=$((notify * -1 + 1)) ;; # Notify Toggle
+
+    28) rofi_prev=6 copy=$((copy * -1 + 1)) ;; # Copy Toggle
 
     *) return "$rofi_exit" ;;
     esac
