@@ -2,8 +2,6 @@ module {
   name:        "util",
   version:     "0.1.0",
   description: "extra utility functions for jq",
-  authors:     ["Maddison Hellstrom <maddy@na.ai>"],
-  license:     "GPL3",
 };
 
 # die prints msg to stderr and exits

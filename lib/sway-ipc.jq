@@ -2,8 +2,7 @@ module {
   name:        "sway-ipc",
   version:     "0.1.0",
   description: "sway-ipc utility functions",
-  authors:     ["Maddison Hellstrom <maddy@na.ai>"],
-  license:     "GPL3",
+  license:     "MIT",
 };
 
 import "util" as u;
