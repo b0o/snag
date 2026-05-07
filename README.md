@@ -35,6 +35,8 @@ Options:
 
   -D <ms>      --delay  Delay capture for <ms> milliseconds.
 
+  -C           --cursor Include cursor in captures (image only).
+
   Capture Mode:
   -I [format] --image   Capture a still image using grim.
                         This is the default mode.
@@ -114,7 +116,7 @@ To pass on arguments to the capture command (grim or wf-recorder), a -- can be
 passed after the final snag argument and any remaining arguments will be passed
 through to the capture command.
 
-(c) 2020-2022 Maddison Hellstrom <github.com/b0o>
+(c) 2020-2026 Maddison Cohodas <github.com/b0o>
 
 License: MIT (https://mit-license.org/)
 ```
@@ -123,7 +125,7 @@ License: MIT (https://mit-license.org/)
 ## License
 
 <!-- LICENSE -->
-&copy; 2020-2022 Maddison Hellstrom
+&copy; 2020-2026 Maddison Cohodas
 
 Released under the MIT License.
 <!-- /LICENSE -->

@@ -3,7 +3,7 @@
 # Utility for swaywm which unifies the task of capturing images and videos of
 # your screen.
 #
-# Copyright 2020-2022 Maddison Hellstrom <https://github.com/b0o>
+# Copyright 2020-2022 Maddison Cohodas <https://github.com/b0o>
 # MIT License
 
 # TODO: configuration file
@@ -15,7 +15,7 @@ shopt -s inherit_errexit
 
 declare prog="snag"
 declare version="v0.1.2"
-declare authors=("Maddison Hellstrom <github.com/b0o>")
+declare authors=("Maddison Cohodas <github.com/b0o>")
 declare repository="github.com/b0o/snag"
 declare license="MIT"
 declare license_url="https://mit-license.org/"

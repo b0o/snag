@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Copyright (C) 2020-2021 Maddison Hellstrom <https://github.com/b0o>
+# Copyright (C) 2020-2021 Maddison Cohodas <https://github.com/b0o>
 #
 # This program is free software: you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
@@ -38,7 +38,7 @@ declare -gA targets=(
 function target_readme() {
   section -s USAGE -c <<<"$("$snag" -h 2>&1)"
   section -s LICENSE <<EOF
-&copy; 2020-$(date +%Y) Maddison Hellstrom
+&copy; 2020-$(date +%Y) Maddison Cohodas
 
 Released under the MIT License.
 EOF
